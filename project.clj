@@ -13,14 +13,13 @@
   :plugins [[lein-figwheel "0.5.14"]
             [lein-cljsbuild "1.1.7" :exclusions [org.clojure/clojure]]]
 
-  :source-paths ["src" "dev" "../ubik/src"]
-
+  :source-paths ["src" "dev"]
   :main frp.core
 
   :cljsbuild
   {:builds
    [{:id           "dev"
-     :source-paths ["src"]
+     :source-paths ["src"  "../ubik/src"]
 
      :figwheel     {:on-jsload "frp.core/on-reload"}
 
@@ -52,7 +51,7 @@
                           [org.clojure/test.check "0.9.0"]
                           [org.clojure/tools.namespace "0.2.11"]]
           ;; need to add dev source path here to get user.clj loaded
-          :source-paths  ["src" "dev"]
+          :source-paths  ["src" "dev"  "../ubik/src"]
 
           :repl-options  {:nrepl-middleware [cemerick.piggieback/wrap-cljs-repl]}
           ;; need to add the compliled assets to the :clean-targets
