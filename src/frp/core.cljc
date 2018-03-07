@@ -1,101 +1,112 @@
 (ns frp.core
-  (:require [ubik.core :as l]
-            [ubik.interactive.core :as spray #?@(:cljs [:include-macros true])]))
+  #?@(:clj
+       [(:require
+         [ubik.core :as l]
+         [ubik.interactive.core :as spray]
+         [ubik.math :as math])]
+       :cljs
+       [(:require
+         [ubik.core :as l]
+         [ubik.interactive.core :as spray :include-macros true]
+         [ubik.math :as math])]))
 
 #?(:cljs (enable-console-print!))
 
-(def colour-button
-  (assoc l/rectangle :width 10 :height 10 :style {:stroke :none}))
+;; Two text boxes
+;; Two colour buttons
 
-(defn cb [c o]
-  (-> colour-button (l/style {:fill c}) (l/translate [o 0])))
-
-(def draw-ui
-  (map cb [:red :green :blue] [0 10 20]))
-
-(def axis
-  [(assoc l/line :to [1000 0])
-   (assoc l/line :to [0 1000])
-   (l/with-style {:stroke :grey :opacity 0.5}
-     [(map (fn [x] (assoc l/line :from [x 0] :to [x 1000])) (range 0 1000 100))
-      (map (fn [y] (assoc l/line :from [0 y] :to [1000 y])) (range 0 1000 100))])])
-
-(defn graph [points]
-  [axis
-   (assoc l/polyline :points points)])
+(l/deftemplate block
+  {:colour :black
+   :size 1}
+  (assoc l/rectangle :width size :height size
+         :style {:fill colour :stroke :none}))
 
 (defn text [t]
-  (assoc l/text :text t))
+  (l/scale (assoc l/text :text t) 2))
 
-(defn with-subs [keys f]
-  (spray/subscription keys f))
+(def status-legend
+  (spray/sub-form <<
+    (map-indexed
+     (fn [i s]
+       (l/translate s [0 (* -1 50 i)]))
+     [(text (str "Clicks: " (<< :click-count)))
+      (text (str "Red Clicks: " (<< :red-clicks)))
+      (text (str "Blue Clicks: " (<< :blue-clicks)))
+      (text (str "Mouse Down? " (<< :pressed?)))
+      (text (str "Last click at: " (<< :point)))])))
+
+(def widgets
+  [(-> block
+       (assoc :colour :red :size 40)
+       (l/translate [0 0])
+       (l/tag :red-block))
+
+   (-> block
+       (assoc :colour :blue :size 40)
+       (l/translate [200 0])
+       (l/tag :blue-block))
+
+   (-> l/rectangle
+       (assoc :width 200 :height 30)
+       (l/translate [400 0]))
+
+   (-> l/rectangle
+       (assoc :width 200 :height 30)
+       (l/translate [400 -100]))])
 
 (def render
-  (spray/subscription [:point :pressed?]
-    (fn [point pressed?]
-      [
-       (->
-        [(text "Mouse Button Down?")
-         (l/translate (text pressed?) [120 0])
-         (-> [(text "Cursor Position:")
-              (l/translate (text point) [120 0])]
-             (l/translate [0 -30]))]
-        (l/scale 3)
-        (l/translate [100 900]))
-       (->
-        [(l/translate (l/scale (text "X coord over time:") 10) [10 1050])
-         (spray/subscription [:x-coords] graph)]
-        (l/scale 0.2)
-        (l/translate [800 700]))
-       (->
-        [(-> (text "Y coord over time:") (l/scale 10) (l/translate [10 1050]))
-         (l/with-style {:stroke :blue}
-           (spray/subscription [:y-coords] graph))]
-        (l/scale 0.2)
-        (l/translate [1100 700]))
-       #_(-> [(-> l/polyline
-                  (assoc :points (take 200 locations)))
-              (-> l/polyline
-                  (assoc :points (take 200 (drop 200 locations)))
-                  (l/style {:stroke :red}))])])))
+  [(l/translate widgets [200 500])
+   (l/translate status-legend [100 900])])
 
-(defn last-30-seconds [locs]
-  (let [now     #?(:cljs (js/Date.now) :clj 0)
-        in-span (take-while (fn [x] (< (- now (:time x)) 30000))
-                            locs)]
-    (loop [locs in-span
-           out []
-           time (- now 30000)]
-      (if (empty? locs)
-        out
-        (if (< time (:time (first locs)))
-          (recur locs (conj out (first locs)) (+ time 300))
-          (recur (rest locs) out time))))))
+
+(defn valid-click?
+  "Returns true if the given down and up event are sufficiently close in space
+  and time."
+  [{{t1 :time [x1 y1] :location} :down
+    {t2 :time [x2 y2] :location} :up}]
+  (and (< (- t2 t1) 200)
+       (< (+ (math/abs (- x2 x1)) (math/abs (- y2 y1))) 100)))
+
+(defn click-tx [xf]
+  (let [state (atom nil)
+        down (atom nil)]
+    (fn
+      ([] (xf))
+      ([acc] (xf acc))
+      ([acc n]
+       (if (:down? n)
+         (do
+           (reset! state :down)
+           (reset! down n)
+           acc)
+         (let [start @down]
+           (reset! down nil)
+           (if (compare-and-set! state :down :up)
+             (xf acc {:down start :up n})
+             acc)))))))
 
 (spray/defsubs subscriptions <<
-  {:locations (map :location (:locations (<< :db)))
-   :timeline (last-30-seconds (:locations (<< :db)))
-   :point (str (first (<< :locations)))
-   :pressed? (:down? (first (:click-state (<< :db))))
-   :x-coords (map-indexed (fn [i [x _]] [i (quot x 2)]) (take 1000 (<< :locations)))
-   :y-coords (map-indexed (fn [i [_ y]] [i y]) (take 1000 (<< :locations)))})
+  {:click-state (:click-state (<< :db))
+   :clicks (eduction (comp click-tx (filter valid-click?)) (<< :click-state))
+   :click-count (count (<< :clicks))
+   :point (str (:location (last (<< :click-state))))
+   :pressed? (or (:down? (last (:click-state (<< :db)))) false)})
 
 
 (def event-map
-  {:mouse-move (fn [{:keys [location time]}]
-                 {:swap! (fn [db]
-                           (update db :locations conj
-                                   {:time     time
-                                    :location location}))})
-   :left-mouse-down (fn [{:keys [time]}]
+  {:left-mouse-down (fn [{:keys [time location]}]
                  {:swap! (fn [db]
                            (update db :click-state conj
-                                   {:time time :down? true}))})
+                                   {:time time
+                                    :location location
+                                    :down? true}))})
 
-   :left-mouse-up (fn [{:keys [time]}]
+   :left-mouse-up (fn [{:keys [time location]}]
                {:swap! (fn [db]
                          (update db :click-state conj
-                                 {:time time :down? false}))})
+                                 {:time time
+                                  :location location
+                                  :down? false}))})
    })
 
 (defn on-reload []
@@ -105,7 +116,8 @@
     :shape render}))
 
 (defn ^:export init []
-  (swap! ubik.interactive.db/app-db assoc :text "HiHiHI" :counter 4 )
+  (swap! ubik.interactive.db/app-db assoc :text "HiHiHI" :counter 4
+         :click-state [])
   (on-reload))
 
 (def db ubik.interactive.db/app-db)
