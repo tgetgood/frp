@@ -25,143 +25,100 @@
   (atom nil))
 
 (def re-click-code
-  "(reg-event-db :init-db
+  {:init-db-simple
+   "(reg-event-db :init-db
   (fn [_ _]
-    {:counter 0}))
+    {:counter 0}))"
 
-(reg-event-db :click
+   :init-db-duplex
+   "(reg-event-db :init-db
+  (fn [_ _]
+    {:counter 0
+     :last-mouse-down nil}))"
+
+   :init-db-stream
+   "(reg-event-db :init-db
+  (fn [_ _]
+    {:mouse-events []}))"
+
+   :click-event
+   "(reg-event-db :click
   (fn [db _]
-    (update db :counter inc)))
+    (update db :counter inc))) "
 
-(reg-sub :clicks
+   :mouse-down
+   "(reg-event-db :mouse-down
+  (fn [db [_ e]]
+    (assoc db :last-mouse-down e)))"
+
+   :mouse-up
+   "(reg-event-db :mouse-up
+  (fn [db [_ up]]
+    (let [down (:last-mouse-down db)]
+      (cond-> (assoc db :last-mouse-down nil)
+        (valid-click? down up) (update db :counter inc)))))"
+
+   :click-sub
+   "(reg-sub :clicks
   (fn [db]
-    (:counter db)))
+    (:counter db))) "
 
-(defn re-view []
+   :view
+   "(defn re-view []
   [:div
    [:button {:on-click #(dispatch! :click)} \"Click Me!\"]
-   [:div {} (str \"Clicked \" @(subscribe :clicks) \" times.\")]])")
+   [:div {} (str \"Clicked \" @(subscribe :clicks) \" times.\")]])"
+
+   :mouse-event-down
+   "(reg-event-db :mouse-down
+  (fn [db [_ e]]
+    (update db :mouse-events conj e)))"
+
+   :mouse-event-up
+   "(reg-event-db :mouse-up
+  (fn [db [_ e]]
+    (update db :mouse-events conj e)))"
+
+   :click-stream-sub
+   "(reg-sub :clicks
+     (fn [db]
+       (count (valid-clicks (:mouse-events db)))))"
+
+   :view-dup
+   "(defn view []
+  [:div
+   [:button {:on-mouse-down #(dispatch! :mouse-down %)
+             :on-mouse-up #(dispatch! :mouse-up %)}
+    \"Click Me!\" ]
+   [:div (str \"Clicked \" @(subscribe :clicks) \" times.\")]])"
+   })
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; Views
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (def code-background
-  (assoc l/rectangle :style {:fill "#E1E1E1"
-                             :stroke "rgba(0,0,0,0)"}))
+  (assoc l/rectangle :style {:fill "#F1F1F1"
+                             :stroke :none}))
 
-(defn set-code [code h]
-  (let [lines       (take (quot h 16) (string/split-lines code))
+
+(defn set-code [code]
+  (let [h 400
+        lines       (take (quot h 16) (string/split-lines code))
         line-height 16
         box-height  (* (inc (count lines)) line-height)
-        num-width   (* 12 (inc (math/floor (math/log 10 (count lines)))))]
-    [(l/scale code-background [(+ num-width 600 5) box-height])
-     (assoc l/line :from [num-width 0] :to [num-width box-height])
+        line-width (* 9 (apply max (map count lines)))]
+    [(l/scale code-background [line-width box-height])
      (l/with-style {:font "14px monospace"}
        (map-indexed (fn [i line]
                       (let [h (- box-height (* line-height (inc i)))]
-                        [(assoc l/text :text (str (inc i)) :corner [5 h] )
-                         (assoc l/text :text line :corner [(+ 5 num-width) h])]))
+                        [(assoc l/text :text line :corner [5 h])]))
                     lines))]))
 
-(l/deftemplate block
-  {:colour :black
-   :size 1}
-  (assoc l/rectangle :width size :height size
-         :style {:fill colour :stroke :none}))
-
-(defn text [t]
-  (l/scale (assoc l/text :text t) 2))
-
-(def legend-data
-  (spray/sub-form <<
-    (array-map
-     "Mouse Down? "    (<< :pressed?)
-     "Last Click at: " (<< :point)
-     "Total Clicks: "  (<< :click-count)
-     "Red Clicks: "    (<< :red-clicks)
-     "Blue Clicks: "   (<< :blue-clicks)
-     "Key Pressed: "   (<< :key-pressed))))
-
-(def legend
-  (spray/sub-form <<
-    [(map-indexed
-      (fn [i s]
-        (l/translate (text s) [0 (* -1 50 i)]))
-      (map key (<< :legend-data)))
-     (map-indexed
-      (fn [i s]
-        (l/translate (text (str s)) [160 (* -1 50 i)]))
-      (map val (<< :legend-data)))]))
-
-(defn text-box [tag]
-  (spray/subscription [:selected]
-    (fn [selected]
-      (-> l/rectangle
-          (assoc :width 350 :height 30)
-          (l/tag tag)
-          (l/style {:stroke (if (= selected tag) :green :black)})))))
-
-(def box-1-loc [0 -100])
-(def box-2-loc [0 -200])
-
-(def text-out
-  (spray/sub-form <<
-    [(-> (text (<< :box-1-text))
-         (l/translate [5 5])
-         (l/translate box-1-loc))
-
-     (-> (text (<< :box-2-text))
-         (l/translate [5 5])
-         (l/translate box-2-loc))]))
-
-(def inputs
-  [(-> block
-       (assoc :colour :red :size 40)
-       (l/translate [0 0])
-       (l/tag :red-block))
-
-
-   (-> block
-       (assoc :colour :blue :size 40)
-       (l/translate [0 100])
-       (l/tag :blue-block))
-
-   (l/translate
-    (text-box :box-1)
-    box-1-loc)
-
-   (l/translate
-    (text-box :box-2)
-    box-2-loc)])
-
-(def io-tags
-  {:pressed?    [1250 700]
-   :point       [1250 650]
-   :click-count [1250 600]
-   :red-clicks  [1250 550]
-   :blue-clicks [1250 500]
-   :key-pressed [1250 450]
-
-   :box-1-text  [420 460]
-   :box-2-text  [420 360]
-
-   :mouse-up    [50 1000]
-   :mouse-down  [50 900]
-   :key-down    [50 200]
-   :key-up      [50 100]})
-
-(def internal-flow-tags
-  {:mouse-events [400 950]
-   :clicks       [700 800]
-   :selections   [800 600]
-   :text-events  [700 400]
-   :key-events   [400 150]})
-
-(defn sub-tag-render [tags colour]
-  (map (fn [[k v]] (l/with-style {:fill colour}
-                     (l/translate (text k) v)))
-       tags))
+(defn text [t & [c]]
+  (cond-> (l/scale (assoc l/text :text t) 2)
+    c (l/translate c)))
 
 (l/deftemplate arrow
   {:from [0 0]
@@ -177,48 +134,6 @@
             :style {:fill :black :stroke :none}
             :points [to t1 t2 to])]))
 
-(def all-tags (merge io-tags internal-flow-tags))
-
-(defn tag-arrow [[from to of ot]]
-  (let [[x1 y1] (get all-tags from)
-        [x2 y2] (get all-tags to)
-        [x1o y1o] (or of [0 0])
-        [x2o y2o] (or ot [0 0])
-        p [(+ x1o x1 (* 12 (count (name from)))) (- (+ y1 y1o 6) y1o)]
-        q [(+ x2o (- x2 20)) (+ y2o y2 6)]]
-    (assoc arrow :from p :to q )))
-
-(def flow-chart
-  (map tag-arrow
-       [[:mouse-up :mouse-events]
-        [:mouse-down :mouse-events]
-        [:key-down :key-events]
-        [:key-up :key-events]
-        [:mouse-events :clicks]
-        [:mouse-events :pressed?]
-        [:clicks :selections nil [70 12]]
-        [:clicks :click-count]
-        [:clicks :point]
-        [:selections :red-clicks]
-        [:selections :blue-clicks]
-        [:selections :text-events nil [70 12]]
-        [:key-events :key-pressed]
-        [:key-events :text-events nil [70 -12]]
-        [:text-events :box-1-text [-150 0] [140 0]]
-        [:text-events :box-2-text [-150 0] [140 0]]]))
-
-(def render
-  (spray/subscription [:mode]
-    (fn [mode]
-      [(l/translate [inputs text-out] [50 550])
-       (when (contains? #{:flow :io :all-tags} mode)
-         (sub-tag-render io-tags :teal))
-       (when (contains? #{:flow :all-tags} mode)
-         (sub-tag-render internal-flow-tags :rebeccapurple))
-       (when (contains? #{:flow} mode)
-         flow-chart)
-       (l/translate legend [1450 700])])))
-
 (defmulti view identity)
 
 (defmethod view :default [_] [])
@@ -231,13 +146,67 @@
               :click-me)
        (l/translate (text "Click Me!") [30 20])
        (l/translate (text (str "Clicked: " (<< :clickme-count) " times."))
-                    [0 -50])]
-      [200 300])]))
+                    [-10 -50])]
+      [800 300])]))
 
-(defmethod view ::click-me-with-code []
-  [(l/translate
-    (set-code re-click-code 600)
-    [200 400])
+(defmethod view ::clickme-simple-code []
+  (spray/sub-form <<
+   [(l/translate
+     [(l/with-style {:fill (if (<< :clickme?) :blue :black)}
+        (text ":click" [0 0]))
+      (assoc arrow :from [70 6] :to [150 6])
+      (l/translate (set-code (:click-event re-click-code)) [160 -25])
+      (assoc arrow :from [450 6] :to [500 6])
+      (l/translate
+       [(text "App DB" [20 50])
+        (set-code (str "{:counter " (<< :clickme-count) "}"))]
+       [520 -20])
+      (assoc arrow :from [660 6] :to [760 6])
+      (l/translate (set-code (:click-sub re-click-code))
+                   [780 -25])
+      (assoc arrow :from [990 6] :to [1090 6])
+      (text (str (<< :clickme-count)) [1110 0])
+      (l/translate (set-code (:view re-click-code))
+                   [1270 -30])
+      (assoc arrow :from [1150 6] :to [1290 -6])
+      (assoc arrow :from [1290 6] :to [920 -270])
+      (let [c (if (<< :clickme?) :blue :black)]
+        (l/with-style {:stroke c :fill c}
+          (assoc arrow :from [750 -250] :to [50 -6])))
+      (l/translate
+       (set-code (:init-db-simple re-click-code))
+       [400 200])
+      (assoc arrow :from [500 190] :to [560 60])]
+     [50 600])
+    (view ::click-me)]))
+
+(defmethod view ::clickme-duplex-code []
+  (spray/sub-form <<
+   [(l/translate
+     [(text ":mouse-down" [0 200])
+      (text ":mouse-up")
+
+      (l/translate (set-code (:mouse-down re-click-code)) [200 180])
+      (l/translate (set-code (:mouse-up re-click-code)) [200 -50])
+
+      (l/translate
+       [(text "App DB" [20 70])
+        (set-code (str "{:counter " (<< :clickme-count)
+                       "\n :last-mouse-down " (<< :last-mouse-down) "}"))]
+       [700 100])
+
+      (l/translate (set-code (:click-sub re-click-code)) [1350 100])
+
+      (text (str (<< :clickme-count)) [1400 -50])
+
+      (l/translate (set-code (:view-dup re-click-code)) [1200 -300])
+      ]
+     [50 600])
+    (view ::click-me)])
+  )
+
+(defmethod view ::clickme-stream-code []
+  [
    (view ::click-me)])
 
 (def root
@@ -245,7 +214,9 @@
 
 (def state-flow
   [::click-me
-   ::click-me-with-code
+   ::clickme-simple-code
+   ::clickme-duplex-code
+   ::clickme-stream-code
    :base
    :io
    :all-tags
@@ -260,7 +231,7 @@
   and time."
   [{{t1 :time [x1 y1] :location} :down
     {t2 :time [x2 y2] :location} :up}]
-  (and (< (- t2 t1) 200)
+  (and (< (- t2 t1) 2000)
        (< (+ (math/abs (- x2 x1)) (math/abs (- y2 y1))) 100)))
 
 (defn unify-click
@@ -430,21 +401,23 @@
    :box-1-text     (transduce (get-keystrokes-in :box-1) str (<< :text-events))
    :box-2-text     (transduce (get-keystrokes-in :box-2) str (<< :text-events))
 
-   :pressed?       (or (:down? (last (:mouse-events (<< :db)))) false)
+   :pressed?       (or (:down? (last (<< :mouse-events))) false)
 
    ;;; Simple view
 
    :clickme-count (count (filter (partial clicked-on? :click-me)
                                  (map :location (<< :clicks))))
 
+   :clickme?  (and (:down? (last (<< :mouse-events)))
+                   (clicked-on? :click-me (:location (last (<< :mouse-events)))))
 
+   :last-mouse-down
+   (if (:down? (last (<< :mouse-events)))
+     (dissoc (last (<< :mouse-events)) :down?)
+     "nil")
     ;;; Internal subscriptions
 
-   :legend-data    legend-data
-
-   :mode           (select-mode (<< :key-events))}
-  )
-
+   :mode           (select-mode (<< :key-events))})
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; Event Handlers
