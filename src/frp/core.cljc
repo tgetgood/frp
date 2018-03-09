@@ -9,6 +9,12 @@
 #?(:cljs (enable-console-print!))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;; Geometry Game
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; Re-frame click-me code
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -103,14 +109,13 @@
   (assoc l/rectangle :style {:fill "#F1F1F1"
                              :stroke :none}))
 
-
-(defn set-code [code]
-  (let [h 400
+(defn set-code [code & [background]]
+  (let [h 200
         lines       (take (quot h 16) (string/split-lines code))
         line-height 16
         box-height  (* (inc (count lines)) line-height)
-        line-width (+ 10 (* 8 (apply max (map count lines))))]
-    [(l/scale code-background [line-width box-height])
+        line-width (* 9 (apply max (map count lines)))]
+    [(l/scale (or background code-background) [line-width box-height])
      (l/with-style {:font "14px monospace"}
        (map-indexed (fn [i line]
                       (let [h (- box-height (* line-height (inc i)))]
@@ -169,11 +174,11 @@
       (text (str (<< :clickme-count)) [1110 0])
       (l/translate (set-code (:view re-click-code))
                    [1270 -30])
-      (assoc arrow :from [1150 6] :to [1290 -6])
-      (assoc arrow :from [1290 6] :to [920 -270])
+      (assoc arrow :from [1150 6] :to [1250 6])
+      (assoc arrow :from [1250 -6] :to [920 -270])
       (let [c (if (<< :clickme?) :blue :black)]
         (l/with-style {:stroke c :fill c}
-          (assoc arrow :from [750 -250] :to [50 -6])))
+          (assoc arrow :from [740 -280] :to [50 -12])))
       (l/translate
        (set-code (:init-db-simple re-click-code))
        [400 200])
@@ -198,7 +203,8 @@
         (set-code (with-out-str
                     (pprint
                      {:counter (<< :clickme-count)
-                      :last-mouse-down (<< :last-mouse-down)})))]
+                      :last-mouse-down (<< :last-mouse-down)}))
+                  [])]
        [700 100])
 
       (l/translate (set-code (:click-sub re-click-code)) [1350 100])
@@ -206,6 +212,8 @@
       (text (str (<< :clickme-count)) [1400 -50])
 
       (l/translate (set-code (:view-dup re-click-code)) [1200 -300])
+
+      (l/translate (set-code (:init-db-duplex re-click-code)) [800 300])
 
       (arrows
        [[[130 0] [180 0]]
@@ -215,14 +223,50 @@
         [[850 170] [1330 140]]
         [[1410 90] [1410 -20]]
         [[1410 -70] [1410 -170]]
-        [[1200 -250] [920 -300]]
-        [[720 -280] [50 -30]]])]
+        [[1180 -250] [920 -280]]
+        [[720 -280] [50 -30]]
+        [[900 290] [810 200]]])]
      [50 600])
     (view ::click-me)]))
 
 (defmethod view ::clickme-stream-code []
-  [
-   (view ::click-me)])
+  (spray/sub-form <<
+   [(l/translate
+     [(text ":mouse-down" [0 200])
+      (text ":mouse-up")
+
+      (l/translate (set-code (:mouse-event-down re-click-code)) [200 170])
+      (l/translate (set-code (:mouse-event-up re-click-code)) [200 -20])
+
+      (l/translate
+       [(set-code (with-out-str
+                    (pprint
+                     {:mouse-events (<< :m-stream-disp)}))
+                  [])
+        (text "App DB" [150 210])]
+       [700 50])
+
+      (l/translate (set-code (:click-stream-sub re-click-code)) [1350 100])
+
+      (text (str (<< :clickme-count)) [1400 -50])
+
+      (l/translate (set-code (:view-dup re-click-code)) [1200 -300])
+
+      (l/translate (set-code (:init-db-stream re-click-code)) [500 350])
+
+      (arrows
+       [[[130 0] [180 0]]
+        [[150 210] [180 210]]
+        [[540 210] [680 200]]
+        [[530 20] [680 120]]
+        [[1250 170] [1330 140]]
+        [[1410 90] [1410 -20]]
+        [[1410 -70] [1410 -170]]
+        [[1180 -250] [920 -280]]
+        [[720 -280] [50 -30]]
+        [[650 340] [820 270]]])]
+     [50 600])
+    (view ::click-me)]))
 
 (def root
   (spray/subscription [:mode] view))
@@ -231,11 +275,7 @@
   [::click-me
    ::clickme-simple-code
    ::clickme-duplex-code
-   ::clickme-stream-code
-   :base
-   :io
-   :all-tags
-   :flow])
+   ::clickme-stream-code])
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; Subscriptions
@@ -299,39 +339,6 @@
              (xf acc (dissoc n :type))
              acc)))))))
 
-(defn control-char? [c]
-  (contains? #{"Enter" "Shift" "OS" "Alt" "Control" "Backspace" "Tab"
-               "ArrowLeft" "ArrowRight" "ArrowUp" "ArrowDown"}
-             c))
-
-(defn which-click [{loc :location :as point}]
-  (cond
-    (clicked-on? :box-1 loc) (assoc point :selection :box-1)
-    (clicked-on? :box-2 loc) (assoc point :selection :box-2)
-    :else                    (assoc point :selection :none)))
-
-(defn keys-in [k]
-  (fn [xf]
-    (let [in-focus? (volatile! false)]
-      (fn
-        ([] (xf))
-        ([acc] (xf acc))
-        ([acc n]
-         (if-let [sel (:selection n)]
-           (do
-             (vreset! in-focus? (= sel k))
-             acc)
-           (if @in-focus?
-             (xf acc n)
-             acc)))))))
-
-(defn get-keystrokes-in [tag]
-  (comp keybr-tx
-        (keys-in tag)
-        (map :key)
-        (remove control-char?)
-        (take 30)))
-
 (defn keys-pressed [xf]
   (let [pressed (volatile! #{})]
     (fn
@@ -369,70 +376,34 @@
                       0)))
 
 (spray/defsubs subscriptions <<
-  {:mouse-events   (:mouse-events (<< :db))
+  {:mouse-events  (:mouse-events (<< :db))
 
-   :mouse-down     (filter :down? (<< :mouse-events))
+   :key-events    (:key-events (<< :db))
 
-   :mouse-up       (remove :down? (<< :mouse-events))
-
-   :key-events     (:key-events (<< :db))
-
-   :key-down       (filter #(= :down (:type %)) (<< :key-events))
-
-   :key-up         (filter #(= :up (:type %)) (<< :key-events))
-
-   :clicks         (eduction (comp click-tx
-                                   (filter valid-click?)
-                                   (map unify-click))
-                             (<< :mouse-events))
-
-   :click-count    (count (<< :clicks))
-
-   :red-clicks     (->> (<< :clicks)
-                        (map :location)
-                        (filter (partial clicked-on? :red-block))
-                        count)
-
-   :blue-clicks    (->> (<< :clicks)
-                        (map :location)
-                        (filter (partial clicked-on? :blue-block))
-                        count)
-
-   :selections     (map which-click (<< :clicks))
-
-   :selected       (:selection (last (<< :selections)))
-
-   :point          (:location (last (<< :clicks)))
-
-   :key-pressed    (->> (<< :key-events)
-                        (eduction keys-pressed)
-                        last
-                        (interpose "-")
-                        (apply str))
-
-   :text-events    (sort-by :time (concat (<< :key-events)
-                                          (<< :selections)))
-
-   :box-1-text     (transduce (get-keystrokes-in :box-1) str (<< :text-events))
-   :box-2-text     (transduce (get-keystrokes-in :box-2) str (<< :text-events))
-
-   :pressed?       (or (:down? (last (<< :mouse-events))) false)
+   :clicks        (eduction (comp click-tx
+                                  (filter valid-click?)
+                                  (map unify-click))
+                            (<< :mouse-events))
 
    ;;; Simple view
 
    :clickme-count (count (filter (partial clicked-on? :click-me)
                                  (map :location (<< :clicks))))
 
-   :clickme?  (and (:down? (last (<< :mouse-events)))
-                   (clicked-on? :click-me (:location (last (<< :mouse-events)))))
+   :last-mouse    (first (<< :mouse-events))
+
+   :clickme?      (and (:down? (<< :last-mouse))
+                       (clicked-on? :click-me (:location (<< :last-mouse))))
+
+   :m-stream-disp (take 10 (<< :mouse-events))
 
    :last-mouse-down
-   (if (:down? (last (<< :mouse-events)))
-     (dissoc (last (<< :mouse-events)) :down?)
-)
+   (if (:down? (<< :last-mouse))
+     (dissoc (<< :last-mouse) :down?))
+
     ;;; Internal subscriptions
 
-   :mode           (select-mode (<< :key-events))})
+   :mode          (select-mode (<< :key-events))})
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; Event Handlers
@@ -474,7 +445,7 @@
     :shape root}))
 
 (defn db-init! []
-  (reset! ubik.interactive.db/app-db {:mouse-events [] :key-events []}))
+  (reset! ubik.interactive.db/app-db {:mouse-events '() :key-events []}))
 
 (defn ^:export init []
   (db-init!)
