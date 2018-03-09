@@ -165,6 +165,17 @@
          flow-chart)
        (l/translate legend [1450 700])])))
 
+(def click-me
+  (spray/sub-form <<
+    [(l/translate
+      [(l/tag (assoc l/rectangle :style {:fill :lightblue :stroke :none}
+                     :width 150 :height 50)
+              :click-me)
+       (l/translate (text "Click Me!") [30 20])
+       (l/translate (text (str "Clicked: " (<< :clickme-count) " times."))
+                    [0 -50])]
+      [200 300])]))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; Subscriptions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -303,60 +314,66 @@
                       0)))
 
 (spray/defsubs subscriptions <<
-  {:mouse-events (:mouse-events (<< :db))
+  {:mouse-events   (:mouse-events (<< :db))
 
-   :mouse-down   (filter :down? (<< :mouse-events))
+   :mouse-down     (filter :down? (<< :mouse-events))
 
-   :mouse-up     (remove :down? (<< :mouse-events))
+   :mouse-up       (remove :down? (<< :mouse-events))
 
-   :key-events   (:key-events (<< :db))
+   :key-events     (:key-events (<< :db))
 
-   :key-down     (filter #(= :down (:type %)) (<< :key-events))
+   :key-down       (filter #(= :down (:type %)) (<< :key-events))
 
-   :key-up       (filter #(= :up (:type %)) (<< :key-events))
+   :key-up         (filter #(= :up (:type %)) (<< :key-events))
 
-   :clicks       (eduction (comp click-tx
-                                 (filter valid-click?)
-                                 (map unify-click))
-                           (<< :mouse-events))
+   :clicks         (eduction (comp click-tx
+                                   (filter valid-click?)
+                                   (map unify-click))
+                             (<< :mouse-events))
 
-   :click-count  (count (<< :clicks))
+   :click-count    (count (<< :clicks))
 
-   :red-clicks   (->> (<< :clicks)
-                      (map :location)
-                      (filter (partial clicked-on? :red-block))
-                      count)
+   :red-clicks     (->> (<< :clicks)
+                        (map :location)
+                        (filter (partial clicked-on? :red-block))
+                        count)
 
-   :blue-clicks  (->> (<< :clicks)
-                      (map :location)
-                      (filter (partial clicked-on? :blue-block))
-                      count)
+   :blue-clicks    (->> (<< :clicks)
+                        (map :location)
+                        (filter (partial clicked-on? :blue-block))
+                        count)
 
-   :selections   (map which-click (<< :clicks))
+   :selections     (map which-click (<< :clicks))
 
-   :selected     (:selection (last (<< :selections)))
+   :selected       (:selection (last (<< :selections)))
 
-   :point        (:location (last (<< :clicks)))
+   :point          (:location (last (<< :clicks)))
 
-   :key-pressed  (->> (<< :key-events)
-                      (eduction keys-pressed)
-                      last
-                      (interpose "-")
-                      (apply str))
+   :key-pressed    (->> (<< :key-events)
+                        (eduction keys-pressed)
+                        last
+                        (interpose "-")
+                        (apply str))
 
-   :text-events  (sort-by :time (concat (<< :key-events)
-                                        (<< :selections)))
+   :text-events    (sort-by :time (concat (<< :key-events)
+                                          (<< :selections)))
 
-   :box-1-text   (transduce (get-keystrokes-in :box-1) str (<< :text-events))
-   :box-2-text   (transduce (get-keystrokes-in :box-2) str (<< :text-events))
+   :box-1-text     (transduce (get-keystrokes-in :box-1) str (<< :text-events))
+   :box-2-text     (transduce (get-keystrokes-in :box-2) str (<< :text-events))
 
-   :pressed?     (or (:down? (last (:mouse-events (<< :db)))) false)
+   :pressed?       (or (:down? (last (:mouse-events (<< :db)))) false)
 
-  ;;; Internal subscriptions
+   ;;; Simple view
 
-   :legend-data  legend-data
+   :clickme-count (count (filter (partial clicked-on? :click-me)
+                                 (map :location (<< :clicks))))
 
-   :mode         (select-mode (<< :key-events))}
+
+    ;;; Internal subscriptions
+
+   :legend-data    legend-data
+
+   :mode           (select-mode (<< :key-events))}
   )
 
 
@@ -397,7 +414,7 @@
   (spray/initialise!
    {:subscriptions subscriptions
     :event-handlers event-map
-    :shape render}))
+    :shape click-me}))
 
 (defn db-init! []
   (reset! ubik.interactive.db/app-db {:mouse-events [] :key-events []}))
