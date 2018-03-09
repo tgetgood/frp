@@ -1,5 +1,6 @@
 (ns frp.core
-  (:require [clojure.string :as string]
+  (:require [#?(:cljs cljs.pprint :clj clojure.pprint) :refer [pprint]]
+            [clojure.string :as string]
             [ubik.core :as l]
             [ubik.geometry :as geo]
             [ubik.interactive.core :as spray :include-macros true]
@@ -108,7 +109,7 @@
         lines       (take (quot h 16) (string/split-lines code))
         line-height 16
         box-height  (* (inc (count lines)) line-height)
-        line-width (* 9 (apply max (map count lines)))]
+        line-width (+ 10 (* 8 (apply max (map count lines))))]
     [(l/scale code-background [line-width box-height])
      (l/with-style {:font "14px monospace"}
        (map-indexed (fn [i line]
@@ -180,19 +181,24 @@
      [50 600])
     (view ::click-me)]))
 
+(defn arrows [v]
+  (map (fn [[from to]] (assoc arrow :from from :to to)) v))
+
 (defmethod view ::clickme-duplex-code []
   (spray/sub-form <<
    [(l/translate
      [(text ":mouse-down" [0 200])
       (text ":mouse-up")
 
-      (l/translate (set-code (:mouse-down re-click-code)) [200 180])
+      (l/translate (set-code (:mouse-down re-click-code)) [240 180])
       (l/translate (set-code (:mouse-up re-click-code)) [200 -50])
 
       (l/translate
        [(text "App DB" [20 70])
-        (set-code (str "{:counter " (<< :clickme-count)
-                       "\n :last-mouse-down " (<< :last-mouse-down) "}"))]
+        (set-code (with-out-str
+                    (pprint
+                     {:counter (<< :clickme-count)
+                      :last-mouse-down (<< :last-mouse-down)})))]
        [700 100])
 
       (l/translate (set-code (:click-sub re-click-code)) [1350 100])
@@ -200,10 +206,19 @@
       (text (str (<< :clickme-count)) [1400 -50])
 
       (l/translate (set-code (:view-dup re-click-code)) [1200 -300])
-      ]
+
+      (arrows
+       [[[130 0] [180 0]]
+        [[150 210] [220 210]]
+        [[400 170] [680 120]]
+        [[400 50] [680 100]]
+        [[850 170] [1330 140]]
+        [[1410 90] [1410 -20]]
+        [[1410 -70] [1410 -170]]
+        [[1200 -250] [920 -300]]
+        [[720 -280] [50 -30]]])]
      [50 600])
-    (view ::click-me)])
-  )
+    (view ::click-me)]))
 
 (defmethod view ::clickme-stream-code []
   [
@@ -414,7 +429,7 @@
    :last-mouse-down
    (if (:down? (last (<< :mouse-events)))
      (dissoc (last (<< :mouse-events)) :down?)
-     "nil")
+)
     ;;; Internal subscriptions
 
    :mode           (select-mode (<< :key-events))})
