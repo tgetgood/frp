@@ -1,14 +1,68 @@
 (ns frp.core
-  (:require
-      [ubik.core :as l]
-      [ubik.geometry :as geo]
-      [ubik.interactive.core :as spray :include-macros true]
-      [ubik.math :as math]))
+  (:require [clojure.string :as string]
+            [ubik.core :as l]
+            [ubik.geometry :as geo]
+            [ubik.interactive.core :as spray :include-macros true]
+            [ubik.math :as math]))
 
 #?(:cljs (enable-console-print!))
 
-;; Two text boxes
-;; Two colour buttons
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;; Re-frame click-me code
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn reg-event-db
+  {:style/indent 1}
+  [k f])
+
+(defn reg-sub
+  {:style/indent 1}
+  [k f])
+
+(defn dispatch! [& args])
+
+(defn subscribe [arg]
+  (atom nil))
+
+(def re-click-code
+  "(reg-event-db :init-db
+  (fn [_ _]
+    {:counter 0}))
+
+(reg-event-db :click
+  (fn [db _]
+    (update db :counter inc)))
+
+(reg-sub :clicks
+  (fn [db]
+    (:counter db)))
+
+(defn re-view []
+  [:div
+   [:button {:on-click #(dispatch! :click)} \"Click Me!\"]
+   [:div {} (str \"Clicked \" @(subscribe :clicks) \" times.\")]])")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;; Views
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def code-background
+  (assoc l/rectangle :style {:fill "#E1E1E1"
+                             :stroke "rgba(0,0,0,0)"}))
+
+(defn set-code [code h]
+  (let [lines       (take (quot h 16) (string/split-lines code))
+        line-height 16
+        box-height  (* (inc (count lines)) line-height)
+        num-width   (* 12 (inc (math/floor (math/log 10 (count lines)))))]
+    [(l/scale code-background [(+ num-width 600 5) box-height])
+     (assoc l/line :from [num-width 0] :to [num-width box-height])
+     (l/with-style {:font "14px monospace"}
+       (map-indexed (fn [i line]
+                      (let [h (- box-height (* line-height (inc i)))]
+                        [(assoc l/text :text (str (inc i)) :corner [5 h] )
+                         (assoc l/text :text line :corner [(+ 5 num-width) h])]))
+                    lines))]))
 
 (l/deftemplate block
   {:colour :black
@@ -165,7 +219,11 @@
          flow-chart)
        (l/translate legend [1450 700])])))
 
-(def click-me
+(defmulti view identity)
+
+(defmethod view :default [_] [])
+
+(defmethod view ::click-me [_]
   (spray/sub-form <<
     [(l/translate
       [(l/tag (assoc l/rectangle :style {:fill :lightblue :stroke :none}
@@ -175,6 +233,23 @@
        (l/translate (text (str "Clicked: " (<< :clickme-count) " times."))
                     [0 -50])]
       [200 300])]))
+
+(defmethod view ::click-me-with-code []
+  [(l/translate
+    (set-code re-click-code 600)
+    [200 400])
+   (view ::click-me)])
+
+(def root
+  (spray/subscription [:mode] view))
+
+(def state-flow
+  [::click-me
+   ::click-me-with-code
+   :base
+   :io
+   :all-tags
+   :flow])
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; Subscriptions
@@ -283,12 +358,6 @@
            (vswap! pressed disj "Shift")
            (vswap! pressed disj (:key n))))
        (xf acc @pressed)))))
-
-(def state-flow
-  [:base
-   :io
-   :all-tags
-   :flow])
 
 (defn last-rx
   ([] nil)
@@ -414,7 +483,7 @@
   (spray/initialise!
    {:subscriptions subscriptions
     :event-handlers event-map
-    :shape click-me}))
+    :shape root}))
 
 (defn db-init! []
   (reset! ubik.interactive.db/app-db {:mouse-events [] :key-events []}))
