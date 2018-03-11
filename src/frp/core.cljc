@@ -8,11 +8,84 @@
 
 #?(:cljs (enable-console-print!))
 
+(defmulti view identity)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; Geometry Game
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defn text [t & [c]]
+  (cond-> (l/scale (assoc l/text :text t) 2)
+    c (l/translate c)))
 
+(def point
+  (assoc l/circle :radius 5 :style {:fill :#fdd017
+                                    :opacity 0.8
+                                    :stroke :none}))
+
+(def button-bg
+  (-> l/rectangle
+      (l/style {:fill :none :stroke :black})
+       (l/scale 100)))
+
+(def circle-button
+  (l/tag [button-bg
+          (assoc l/annulus :style {:stroke :none :fill :black}
+                 :outer-radius 35
+                 :inner-radius 33
+                 :centre [50 50])]
+         ::circle-button))
+
+(def rule-button
+  [button-bg
+   (-> l/rectangle
+       (assoc :width (* 80 (math/sqrt 2)) :height 2)
+       (l/style {:fill :black :stroke :none})
+       (l/translate [10 9])
+       (l/rotate [10 10] 45)
+       (l/tag ::rule-button))
+   (assoc point :centre [10 10])
+   (assoc point :centre [90 90])])
+
+(def selected
+  (assoc l/rectangle :width 100 :height 100
+         :style {:fill :green :opacity 0.3}))
+
+(def control-panel
+  (spray/sub-form <<
+   [circle-button
+    (l/translate rule-button [0 100])
+    (condp = (<< :game-draw)
+      :circle selected
+      :line (assoc selected :corner [0 100])
+      [])]))
+
+(def draw-points
+  (spray/sub-form <<
+   (map #(assoc point :centre %) (<< :points))))
+
+(def user-drawing
+  (spray/sub-form <<
+    (into [] (<< :drawings))))
+
+(def problem-1
+  [(text
+    "Draw an equilateral triangle with the given line segment as its base."
+    [0 300])
+
+   (l/with-style {:stroke :magenta}
+     (assoc l/line :from [150 0] :to [400 0]))])
+
+(def initial-points
+  [[250 300] [500 300]])
+
+(defmethod view ::geo-game []
+  [(l/translate control-panel [30 900])
+   (l/translate problem-1 [100 300])
+   user-drawing
+   draw-points]
+
+  )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; Re-frame click-me code
@@ -74,7 +147,7 @@
    "(defn re-view []
   [:div
    [:button {:on-click #(dispatch! :click)} \"Click Me!\"]
-   [:div {} (str \"Clicked \" @(subscribe :clicks) \" times.\")]])"
+   [:div {} (str \"Clicked: \" @(subscribe :clicks) \" times.\")]])"
 
    :mouse-event-down
    "(reg-event-db :mouse-down
@@ -97,9 +170,7 @@
    [:button {:on-mouse-down #(dispatch! :mouse-down %)
              :on-mouse-up #(dispatch! :mouse-up %)}
     \"Click Me!\" ]
-   [:div (str \"Clicked \" @(subscribe :clicks) \" times.\")]])"
-   })
-
+   [:div (str \"Clicked \" @(subscribe :clicks) \" times.\")]])"})
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; Views
@@ -122,10 +193,6 @@
                         [(assoc l/text :text line :corner [5 h])]))
                     lines))]))
 
-(defn text [t & [c]]
-  (cond-> (l/scale (assoc l/text :text t) 2)
-    c (l/translate c)))
-
 (l/deftemplate arrow
   {:from [0 0]
    :to [100 0]}
@@ -140,14 +207,12 @@
             :style {:fill :black :stroke :none}
             :points [to t1 t2 to])]))
 
-(defmulti view identity)
-
 (defmethod view :default [_] [])
 
 (defmethod view ::click-me [_]
   (spray/sub-form <<
     [(l/translate
-      [(l/tag (assoc l/rectangle :style {:fill :lightblue :stroke :none}
+      [(l/tag (assoc l/rectangle :style {:fill :#3bb9ff :stroke :none}
                      :width 150 :height 50)
               :click-me)
        (l/translate (text "Click Me!") [30 20])
@@ -269,7 +334,9 @@
     (view ::click-me)]))
 
 (def root
-  (spray/subscription [:mode] view))
+  (l/translate
+   (spray/subscription [:mode] view)
+   [100 0]))
 
 (def state-flow
   [::click-me
@@ -277,6 +344,8 @@
    ::clickme-duplex-code
    ::clickme-stream-code])
 
+(def game
+  [::geo-game])
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; Subscriptions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -316,6 +385,39 @@
            (if (compare-and-set! state :down :up)
              (xf acc {:down start :up n})
              acc)))))))
+
+(defn drag-tx [xf]
+  (let [start (volatile! nil)]
+    (fn
+      ([] (xf))
+      ([acc] (xf acc))
+      ([acc n]
+       (if (:down? n)
+         (do
+           (vreset! start n)
+           acc)
+         (let [s @start]
+           (vreset! start nil)
+           (if (valid-click? {:down s :up n})
+             acc
+             (xf acc {:start (:location s)
+                      :end (:location n)
+                      :time (:time s)
+                      :duration [(:time s) (:time n)]}))))))))
+
+(defn drawings-tx [xf]
+  (let [mode (volatile! nil)]
+    (fn
+      ([] (xf))
+      ([acc] (xf acc))
+      ([acc n]
+       (if (:mode n)
+         (do
+           (vreset! mode (:mode n))
+           acc)
+         (if-let [m @mode]
+           acc
+           acc))))))
 
 (defn clicked-on?
   "Returns true if the shape with tag contains location."
@@ -374,6 +476,12 @@
   (nth state-flow (or (transduce (comp keybr-tx arrow-counter)
                                  last-rx key-stream)
                       0)))
+(defn selection-at [click]
+  (let [loc (:location click)]
+    (cond
+      (clicked-on? ::circle-button loc) :circle
+      (clicked-on? ::rule-button loc)   :line
+      :else                             nil)))
 
 (spray/defsubs subscriptions <<
   {:mouse-events  (:mouse-events (<< :db))
@@ -383,9 +491,12 @@
    :clicks        (eduction (comp click-tx
                                   (filter valid-click?)
                                   (map unify-click))
-                            (<< :mouse-events))
+                            (reverse (<< :mouse-events)))
 
+   :last-click    (reduce last-rx (<< :clicks))
    ;;; Simple view
+
+   :drags         (eduction drag-tx (reverse (<< :mouse-event)))
 
    :clickme-count (count (filter (partial clicked-on? :click-me)
                                  (map :location (<< :clicks))))
@@ -400,6 +511,16 @@
    :last-mouse-down
    (if (:down? (<< :last-mouse))
      (dissoc (<< :last-mouse) :down?))
+
+   :game-draw     (selection-at (<< :last-click))
+
+   :draw-modes    (map (fn [x] {:mode (selection-at x) :time (:time x)})
+                       (<< :clicks))
+
+   :drawings      (eduction drawings-tx (sort-by :time (concat (<< :draw-modes)
+                                                               (<< :drags))))
+
+   :points        (:points (<< :db))
 
     ;;; Internal subscriptions
 
@@ -445,7 +566,8 @@
     :shape root}))
 
 (defn db-init! []
-  (reset! ubik.interactive.db/app-db {:mouse-events '() :key-events []}))
+  (reset! ubik.interactive.db/app-db {:mouse-events '() :key-events []
+                                      :points initial-points}))
 
 (defn ^:export init []
   (db-init!)
