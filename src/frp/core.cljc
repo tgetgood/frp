@@ -104,6 +104,30 @@
 (defn subscribe [arg]
   (atom nil))
 
+(def elm-code
+  {:init
+   "main =
+  beginnerProgram { model = 0, view = view, update = update }"
+
+   :view
+   "view model =
+  div []
+    [ button [ onClick Increment ] [ text \"Click Me!\"]
+    , div [] [ text (\"Clicked: \" ++ (toString model) ++ \" times.\")]
+    ]"
+
+   :msg
+   "type Msg = Increment"
+
+   :update
+   "update msg model =
+  case msg of
+    Increment ->
+      model + 1"})
+
+(def redux-code
+  {:view "..."
+   })
 (def re-click-code
   {:init-db-simple
    "(reg-event-db :init-db
@@ -207,6 +231,45 @@
             :style {:fill :black :stroke :none}
             :points [to t1 t2 to])]))
 
+(defn centre [{:keys [xmin xmax ymin ymax]}]
+  [(/ (- xmax xmin) 2) (/ (- ymax ymin) 2)])
+
+(defn slope-angle [[x y]]
+  (if (zero? x)
+    (if (< 0 y)
+      (/ math/pi 2)
+      (* 3 (/ math/pi 2)))
+    (math/atan (/ y x))))
+
+(defn angles [{:keys [xmin xmax ymin ymax]} [x y]]
+  (let [possibles (map slope-angle
+                       (map (fn [[a b]] [(- a x) (- b y)])
+                            [[xmin ymin] [xmin ymax]
+                             [xmax ymin] [xmax ymax]]))]
+    {:pre  (apply min possibles)
+     :post (apply max possibles)}))
+
+(defn circle-layout
+  [s]
+  (let [base-angle (/ (* 2 math/pi) (count s))
+        centres    (map (fn [a] [(math/cos (* a base-angle))
+                                 (math/sin (* a base-angle))])
+                        (range (count s)))]
+    (map (fn [s [x y]]
+           (let [box (geo/bound s)
+                 [dx dy] (centre box)
+                 centre [(- x dx) (- y dy)]]
+             (assoc (angles box centre) :centre centre)))
+         s centres)))
+
+(defmethod view ::elm-code [_]
+  (l/translate
+   [(set-code (:view elm-code))
+    (text "Model")
+    (set-code (:update elm-code))
+    (set-code (:msg elm-code))]
+   [1100 600]))
+
 (defmethod view :default [_] [])
 
 (defmethod view ::click-me [_]
@@ -230,7 +293,7 @@
       (assoc arrow :from [450 6] :to [500 6])
       (l/translate
        [(text "App DB" [20 50])
-        (set-code (str "{:counter " (<< :clickme-count) "}"))]
+        (set-code (str "{:counter " (<< :clickme-count) "}") :white)]
        [520 -20])
       (assoc arrow :from [660 6] :to [760 6])
       (l/translate (set-code (:click-sub re-click-code))
@@ -333,19 +396,27 @@
      [50 600])
     (view ::click-me)]))
 
+(defmethod view ::redux-code [])
+
+(defmethod view ::general-cycle [])
+
 (def root
   (l/translate
    (spray/subscription [:mode] view)
    [100 0]))
 
 (def state-flow
-  [::click-me
+  [::elm-code
+   ::click-me
    ::clickme-simple-code
+   ::elm-code
+   ::redux-code
    ::clickme-duplex-code
    ::clickme-stream-code])
 
 (def game
   [::geo-game])
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; Subscriptions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
