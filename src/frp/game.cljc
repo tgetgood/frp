@@ -136,9 +136,7 @@
 
    :points        (:points (<< :db))
 
-   :drags           (eduction drag-tx (reverse (<< :mouse-event)))
-
-   })
+   :drags           (eduction drag-tx (reverse (<< :mouse-event)))})
 
 #_(defmethod view ::geo-game []
 

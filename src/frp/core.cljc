@@ -196,11 +196,14 @@
       [(map-indexed
         (fn [i s]
           (l/translate (text s) [0 (* -1 50 i)]))
-        (map key legend-data))
+        (map key (butlast legend-data)))
        (map-indexed
         (fn [i s]
           (l/translate (text (str s)) [160 (* -1 50 i)]))
-        (map val legend-data))])))
+        (map val (butlast legend-data)))
+       (let [[k v] (last legend-data)]
+         [(text k [0 -450])
+          (text v [160 -450])])])))
 
 (defn text-box [tag]
   (spray/subscription [:selected]
@@ -249,10 +252,10 @@
    :click-count [1250 600]
    :red-clicks  [1250 550]
    :blue-clicks [1250 500]
-   :key-pressed [1250 450]
+   :key-pressed [1250 250]
 
-   :box-1-text  [420 460]
-   :box-2-text  [420 360]
+   :box-1-text  [1250 420]
+   :box-2-text  [1250 320]
 
    :mouse-up    [50 1000]
    :mouse-down  [50 900]
@@ -298,8 +301,8 @@
         [:clicked-on :text-events nil [70 12]]
         [:key-events :key-pressed]
         [:key-events :text-events nil [70 -12]]
-        [:text-events :box-1-text [-150 0] [140 0]]
-        [:text-events :box-2-text [-150 0] [140 0]]]))
+        [:text-events :box-1-text]
+        [:text-events :box-2-text]]))
 
 (defn centre [{:keys [xmin xmax ymin ymax]}]
   [(/ (- xmax xmin) 2) (/ (- ymax ymin) 2)])
@@ -493,16 +496,20 @@
    (text "5" [1640 970])])
 
 (defmethod view ::general-pattern [_]
-  [(text "View" [600 700])
-   (text "Event" [1000 700])
-   (text "Dataflow" [800 400])
+  [(text "Event" [600 700])
+   (text "View" [1000 700])
+   (text "Subscription" [1100 400])
+   (text "Reduced Value" [780 400])
+   (text "Mutation" [500 400])
    (-> l/circle
-       (l/scale [300 100])
+       (l/scale [450 120])
        (l/translate [850 400]))
    (arrows
-    [[[690 706] [950 706]]
-     [[1020 675] [930 525]]
-     [[700 515] [640 675]]])])
+    [[[950 706] [690 706]]
+     [[1100 525] [1030 675]]
+     [[640 675] [600 515]]
+     [[950 406] [1080 406]]
+     [[650 406] [760 406]]])])
 
 (defmethod view ::frp [_]
   [(text "Inputs" [300 600])
@@ -607,28 +614,38 @@
      [50 600])
     (view ::click-me)]))
 
-
-(def render
-  (spray/subscription [:mode]
-    (fn [mode]
-      [(l/translate [inputs text-out] [50 550])
-       (when (contains? #{:flow :io :all-tags} mode)
-         (sub-tag-render io-tags :teal))
-       (when (contains? #{:flow :all-tags} mode)
-         (sub-tag-render internal-flow-tags :rebeccapurple))
-       (when (contains? #{:flow} mode)
-         flow-chart)
-       (l/translate legend [1450 700])])))
-
 (defmethod view ::stream-ex [_]
   [(l/translate [inputs text-out] [50 550])
    (l/translate legend [1450 700])])
 
 (defmethod view ::stream-flow [_]
-  [(view ::stream-ex)
+  [[(l/translate inputs [50 550])
+    (l/translate text-out [1450 515])
+   (l/translate legend [1450 700])]
    (sub-tag-render io-tags :teal)
    (sub-tag-render internal-flow-tags :rebeccapurple)
    flow-chart])
+
+(defmethod view ::reduced-store [_]
+  [(view ::stream-flow)
+   (-> l/circle
+       (l/style {:stroke :red})
+       (l/scale [140 450])
+       (l/translate [1300 500]))])
+
+(defmethod view ::reduced-stream [_]
+ [(view ::stream-flow)
+  (-> l/circle
+       (l/style {:stroke :red})
+       (l/scale [200 500])
+       (l/translate [460 550]))] )
+
+(defmethod view ::transduced-graph [_]
+  [(view ::stream-flow)
+  (-> l/circle
+       (l/style {:stroke :red})
+       (l/scale [400 500])
+       (l/translate [600 550]))])
 
 (def root
   (spray/subscription [:mode] view))
@@ -640,15 +657,15 @@
    ::redux-code
    ::cycles
    ::split-cycles
-   ::general-pattern
-   ::frp
    ::clickme-duplex-code
    ::clickme-stream-code
    ::stream-ex
-   ::stream-flow])
-
-(def game
-  [::geo-game])
+   ::stream-flow
+   ::frp
+   ::general-pattern
+   ::reduced-store
+   ::reduced-stream
+   ::transduced-graph])
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; Subscriptions
@@ -794,49 +811,49 @@
    :clicks          (eduction (comp click-tx
                                     (filter valid-click?)
                                     (map unify-click))
-                              (reverse (<< :mouse-events)))
+                              (<< :mouse-events))
 
    :last-click      (reduce last-rx (<< :clicks))
 
    :clickme-count   (count (filter (partial clicked-on? :click-me)
                                    (map :location (<< :clicks))))
 
-   :last-mouse      (first (<< :mouse-events))
+   :last-mouse      (reduce last-rx (<< :mouse-events))
 
    :clickme?        (and (:down? (<< :last-mouse))
                          (clicked-on? :click-me (:location (<< :last-mouse))))
 
-   :m-stream-disp   (take 10 (<< :mouse-events))
+   :m-stream-disp   (into [] (take-last 10 (<< :mouse-events)))
 
    :last-mouse-down (if (:down? (<< :last-mouse))
                       (dissoc (<< :last-mouse) :down?))
 
    :mode            (select-mode (<< :key-events))
 
-   :click-count     (count (<< :clicks))
+   :click-count     (reduce count-rx (<< :clicks))
 
-   :red-clicks      (->> (<< :clicks)
-                         (map :location)
-                         (filter (partial clicked-on? :red-block))
-                         count)
+   :red-clicks      (transduce
+                     (comp (map :location)
+                           (filter (partial clicked-on? :red-block)))
+                     count-rx
+                     (<< :clicks))
 
-   :blue-clicks     (->> (<< :clicks)
-                         (map :location)
-                         (filter (partial clicked-on? :blue-block))
-                         count)
+   :blue-clicks     (transduce
+                     (comp (map :location)
+                           (filter (partial clicked-on? :blue-block)))
+                     count-rx
+                     (<< :clicks))
 
    ;; Things clicked on
    :selections      (map which-click (<< :clicks))
 
    ;; Last thing clicked on (if any)
-   :selected        (:selection (last (<< :selections)))
+   :selected        (:selection (reduce last-rx (<< :selections)))
 
-   :point           (:location (last (<< :clicks)))
+   :point           (:location (reduce last-rx (<< :clicks)))
 
    ;; String representing the keys currently pressed down
-   :key-pressed     (->> (<< :key-events)
-                         (eduction keys-pressed)
-                         last
+   :key-pressed     (->> (transduce keys-pressed last-rx (<< :key-events))
                          (interpose "-")
                          (apply str))
 
@@ -849,8 +866,7 @@
    :box-2-text      (transduce (get-keystrokes-in :box-2) str (<< :text-events))
 
    ;; Is the mouse button pressed right now?
-   :pressed?        (:down? (first (:mouse-events (<< :db))))})
-
+   :pressed?        (:down? (reduce last-rx (:mouse-events (<< :db))))})
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; Event Handlers
@@ -892,8 +908,7 @@
     :shape root}))
 
 (defn db-init! []
-  (reset! ubik.interactive.db/app-db {:mouse-events '() :key-events []
-                                      :points []}))
+  (reset! ubik.interactive.db/app-db {:mouse-events [] :key-events []}))
 
 (defn ^:export init []
   (db-init!)
