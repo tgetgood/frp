@@ -119,6 +119,10 @@
    :msg
    "type Msg = Increment"
 
+   :main
+   "main =
+  beginnerProgram { model = 0, view = view, update = update }"
+
    :update
    "update msg model =
   case msg of
@@ -126,8 +130,35 @@
       model + 1"})
 
 (def redux-code
-  {:view "..."
-   })
+  {:view "<div>
+  <p>
+    <button id='increment'>Click Me!</button>
+    Clicked: <span id='value'>0</span> times.
+  </p>
+</div>"
+
+   :action
+   "store.dispatch({ type: 'INCREMENT' });"
+
+   :reducer
+   "function counter(state, action) {
+  if (typeof state === 'undefined') {
+    return 0
+  }
+  switch (action.type) {
+    case 'INCREMENT':
+      return state + 1
+    default:
+      return state
+  }
+}"
+
+   :sub
+   "function render () {
+  document.getElementById('value').innerHTML =
+    store.getState().toString();
+};"})
+
 (def re-click-code
   {:init-db-simple
    "(reg-event-db :init-db
@@ -262,14 +293,6 @@
              (assoc (angles box centre) :centre centre)))
          s centres)))
 
-(defmethod view ::elm-code [_]
-  (l/translate
-   [(set-code (:view elm-code))
-    (text "Model")
-    (set-code (:update elm-code))
-    (set-code (:msg elm-code))]
-   [1100 600]))
-
 (defmethod view :default [_] [])
 
 (defmethod view ::click-me [_]
@@ -283,39 +306,186 @@
                     [-10 -50])]
       [800 300])]))
 
+(defn arrows [v]
+  (map (fn [[from to]] (assoc arrow :from from :to to)) v))
+
 (defmethod view ::clickme-simple-code []
   (spray/sub-form <<
    [(l/translate
-     [(l/with-style {:fill (if (<< :clickme?) :blue :black)}
-        (text ":click" [0 0]))
-      (assoc arrow :from [70 6] :to [150 6])
+     [(l/translate (set-code "(dispatch! :click)") [0 -150])
       (l/translate (set-code (:click-event re-click-code)) [160 -25])
-      (assoc arrow :from [450 6] :to [500 6])
       (l/translate
        [(text "App DB" [20 50])
-        (set-code (str "{:counter " (<< :clickme-count) "}") :white)]
+        (set-code (str "{:counter " (<< :clickme-count) "}") [])]
        [520 -20])
-      (assoc arrow :from [660 6] :to [760 6])
       (l/translate (set-code (:click-sub re-click-code))
                    [780 -25])
-      (assoc arrow :from [990 6] :to [1090 6])
       (text (str (<< :clickme-count)) [1110 0])
       (l/translate (set-code (:view re-click-code))
                    [1270 -30])
-      (assoc arrow :from [1150 6] :to [1250 6])
-      (assoc arrow :from [1250 -6] :to [920 -270])
       (let [c (if (<< :clickme?) :blue :black)]
         (l/with-style {:stroke c :fill c}
-          (assoc arrow :from [740 -280] :to [50 -12])))
+          (assoc arrow :from [740 -280] :to [180 -145])))
       (l/translate
        (set-code (:init-db-simple re-click-code))
        [400 200])
-      (assoc arrow :from [500 190] :to [560 60])]
+
+      (arrows
+       [[[70 -100] [150 -12]]
+        [[450 6] [500 6]]
+        [[660 6] [760 6]]
+        [[990 6] [1090 6]]
+        [[1150 6] [1250 6]]
+        [[1250 -6] [920 -270]]
+        [[500 190] [560 60]]])]
      [50 600])
     (view ::click-me)]))
 
-(defn arrows [v]
-  (map (fn [[from to]] (assoc arrow :from from :to to)) v))
+(defmethod view ::elm-code [_]
+  (spray/sub-form <<
+   [(l/translate
+     [(set-code (:msg elm-code))
+      (l/translate (set-code (:update elm-code)) [460 -25])
+      (l/translate
+       [(text "Model" [-20 50])
+        (set-code (<< :clickme-count) [])]
+       [850 -20])
+      (l/translate (set-code (:view elm-code))
+                   [1120 -30])
+      (let [c (if (<< :clickme?) :blue :black)]
+        (l/with-style {:stroke c :fill c}
+          (assoc arrow :from [740 -280] :to [50 -12])))
+
+      (l/translate (set-code (:main elm-code)) [500 200])
+      (arrows
+       [[[200 6] [430 6]]
+        [[660 6] [760 6]]
+        [[990 6] [1090 6]]
+        [[1150 -50] [920 -270]]])]
+     [50 600])
+    (view ::click-me)]))
+
+(defmethod view ::redux-code [_]
+  (spray/sub-form <<
+   [(l/translate
+     [(set-code (:action redux-code))
+      (l/translate (set-code (:reducer redux-code)) [550 -75])
+      (l/translate
+       (l/scale
+        (set-code (<< :clickme-count) [])
+        1.2)
+       [1100 -220])
+      (l/translate (set-code (:sub redux-code))
+                   [1280 -25])
+      (let [c (if (<< :clickme?) :blue :black)]
+        (l/with-style {:stroke c :fill c}
+          (assoc arrow :from [740 -280] :to [50 -12])))
+
+      (l/translate (set-code (:view redux-code)) [1200 -400])
+
+      (arrows
+       [[[370 6] [530 6]]
+        [[900 6] [1250 6]]
+        [[1350 -50] [920 -270]]])]
+     [50 600])
+    (view ::click-me)]))
+
+
+(defmethod view ::cycles [_]
+  [(l/translate
+    [(l/scale (text "Re-frame" [30 30]) 2)
+     (map-indexed (fn [i x]
+                    (text x [(* (inc i) 300) 0]))
+                     ["event" "event-handler" "effect-handler"])
+     (text "subscription" [1300 0])
+     (text "view" [1600 0])]
+    [0 800])
+   (l/translate
+    [(l/scale (text "Elm" [30 30]) 2)
+     (text "model" [1150 0])
+     (text "update" [750 0])
+     (text "message" [300 0])
+     (text "view" [1450 0])]
+    [0 500])
+   (l/translate
+    [(l/scale (text "Redux" [30 30]) 2)
+     (map-indexed (fn [i x]
+                    (text x [(* (inc i) 450) 0]))
+                  ["" "" "render"])
+     (text "reducer" [750 0])
+     (text "action" [300 0])]
+    [0 200])
+   (arrows
+    [[[170 650] [1600 650]]
+     [[170 350] [1600 350]]])])
+
+(defmethod view ::split-cycles [_]
+  [(view ::cycles)
+   (-> l/circle
+       (l/style {:stroke :red})
+       (l/scale [120 450])
+       (l/translate [330 500]))
+   (-> l/circle
+       (l/style {:stroke :red})
+       (l/scale [180 450])
+       (l/rotate 10)
+       (l/translate [720 500]))
+   (-> l/circle
+       (l/style {:stroke :red})
+       (l/scale [180 450])
+       (l/rotate -15)
+       (l/translate [900 500]))
+   (-> l/circle
+       (l/style {:stroke :red})
+       (l/scale [150 450])
+       (l/translate [1380 500]))
+
+   (-> l/circle
+       (l/style {:stroke :red})
+       (l/scale [200 450])
+       (l/translate [1630 500]))
+
+   (text "1" [320 970])
+   (text "2" [660 970])
+   (text "3" [980 970])
+   (text "4" [1370 970])
+   (text "5" [1640 970])])
+
+(defmethod view ::general-pattern [_]
+  [(text "View" [600 700])
+   (text "Event" [1000 700])
+   (text "Dataflow" [800 400])
+   (-> l/circle
+       (l/scale [300 100])
+       (l/translate [850 400]))
+   (arrows
+    [[[690 706] [950 706]]
+     [[1020 675] [930 525]]
+     [[700 515] [640 675]]])])
+
+(defmethod view ::frp [_]
+  [(text "Inputs" [300 600])
+   (text "Dataflow" [800 600])
+   (-> l/circle
+       (l/scale [300 100])
+       (l/translate [850 600]))
+   (text "View" [1400 600])
+
+   (text "Event" [300 400])
+   (text "Model" [500 400])
+   (text "Model" [700 400])
+
+   (text "Model" [1200 400])
+   (text "View" [1400 400])
+
+   (arrows
+    [[[400 606] [500 606]]
+     [[1200 606] [1350 606]]
+
+     [[380 406] [470 406]]
+     [[580 406] [670 406]]
+
+     [[1280 406] [1380 406]]])])
 
 (defmethod view ::clickme-duplex-code []
   (spray/sub-form <<
@@ -396,23 +566,21 @@
      [50 600])
     (view ::click-me)]))
 
-(defmethod view ::redux-code [])
-
-(defmethod view ::general-cycle [])
-
 (def root
-  (l/translate
-   (spray/subscription [:mode] view)
-   [100 0]))
+  (spray/subscription [:mode] view))
 
 (def state-flow
-  [::elm-code
-   ::click-me
+  [::click-me
    ::clickme-simple-code
    ::elm-code
    ::redux-code
+   ::cycles
+   ::split-cycles
+   ::general-pattern
+   ::frp
    ::clickme-duplex-code
-   ::clickme-stream-code])
+   ::clickme-stream-code
+   ::stream-issues])
 
 (def game
   [::geo-game])
@@ -530,6 +698,11 @@
   ([a] a)
   ([_ x] x))
 
+(defn count-rx
+  ([] 0)
+  ([a] a)
+  ([a _] (inc a)))
+
 (defn arrow-counter [xf]
   (let [c (volatile! 0)]
     (fn
@@ -565,7 +738,6 @@
                             (reverse (<< :mouse-events)))
 
    :last-click    (reduce last-rx (<< :clicks))
-   ;;; Simple view
 
    :drags         (eduction drag-tx (reverse (<< :mouse-event)))
 
@@ -592,8 +764,6 @@
                                                                (<< :drags))))
 
    :points        (:points (<< :db))
-
-    ;;; Internal subscriptions
 
    :mode          (select-mode (<< :key-events))})
 
