@@ -1,5 +1,6 @@
 (ns frp.game
   (:require [ubik.core :as l]
+            [ubik.geometry :as geo]
             [ubik.interactive.core :as spray :include-macros true]
             [ubik.math :as math]))
 
@@ -67,6 +68,77 @@
 
 (def initial-points
   [[250 300] [500 300]])
+
+;;;;; FIXME: Duplicates
+
+(defn clicked-on?
+  "Returns true if the shape with tag contains location."
+  [tag location]
+  (when-let [shape (spray/find-by-tag tag)]
+    (geo/contains? shape location)))
+
+(defn valid-click?
+  "Returns true if the given down and up event are sufficiently close in space
+  and time."
+  [{{t1 :time [x1 y1] :location} :down
+    {t2 :time [x2 y2] :location} :up}]
+  (and (< (- t2 t1) 2000)
+       (< (+ (math/abs (- x2 x1)) (math/abs (- y2 y1))) 100)))
+
+(defn selection-at [click]
+  (let [loc (:location click)]
+    (cond
+      (clicked-on? ::circle-button loc) :circle
+      (clicked-on? ::rule-button loc)   :line
+      :else                             nil)))
+
+(defn drag-tx [xf]
+  (let [start (volatile! nil)]
+    (fn
+      ([] (xf))
+      ([acc] (xf acc))
+      ([acc n]
+       (if (:down? n)
+         (do
+           (vreset! start n)
+           acc)
+         (let [s @start]
+           (vreset! start nil)
+           (if (valid-click? {:down s :up n})
+             acc
+             (xf acc {:start (:location s)
+                      :end (:location n)
+                      :time (:time s)
+                      :duration [(:time s) (:time n)]}))))))))
+
+(defn drawings-tx [xf]
+  (let [mode (volatile! nil)]
+    (fn
+      ([] (xf))
+      ([acc] (xf acc))
+      ([acc n]
+       (if (:mode n)
+         (do
+           (vreset! mode (:mode n))
+           acc)
+         (if-let [m @mode]
+           acc
+           acc))))))
+
+(spray/defsubs subscriptions <<
+  {:game-draw     (selection-at (<< :last-click))
+
+   :draw-modes    (map (fn [x] {:mode (selection-at x) :time (:time x)})
+                       (<< :clicks))
+
+   :drawings      (eduction drawings-tx (sort-by :time (concat (<< :draw-modes)
+                                                               (<< :drags))))
+
+   :points        (:points (<< :db))
+
+   :drags           (eduction drag-tx (reverse (<< :mouse-event)))
+
+   })
 
 #_(defmethod view ::geo-game []
 

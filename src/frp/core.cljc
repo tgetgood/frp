@@ -12,19 +12,6 @@
 ;;;;; Re-frame click-me code
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn reg-event-db
-  {:style/indent 1}
-  [k f])
-
-(defn reg-sub
-  {:style/indent 1}
-  [k f])
-
-(defn dispatch! [& args])
-
-(defn subscribe [arg]
-  (atom nil))
-
 (def elm-code
   {:init
    "main =
@@ -186,6 +173,133 @@
      (assoc l/polyline
             :style {:fill :black :stroke :none}
             :points [to t1 t2 to])]))
+
+(l/deftemplate block
+  {:colour :black
+   :size 1}
+  (assoc l/rectangle :width size :height size
+         :style {:fill colour :stroke :none}))
+
+(def legend-data
+  (spray/sub-form <<
+    (array-map
+     "Mouse Down? "    (<< :pressed?)
+     "Last Click at: " (<< :point)
+     "Total Clicks: "  (<< :click-count)
+     "Red Clicks: "    (<< :red-clicks)
+     "Blue Clicks: "   (<< :blue-clicks)
+     "Key Pressed: "   (<< :key-pressed))))
+
+(def legend
+  (spray/subscription [legend-data]
+    (fn [legend-data]
+      [(map-indexed
+        (fn [i s]
+          (l/translate (text s) [0 (* -1 50 i)]))
+        (map key legend-data))
+       (map-indexed
+        (fn [i s]
+          (l/translate (text (str s)) [160 (* -1 50 i)]))
+        (map val legend-data))])))
+
+(defn text-box [tag]
+  (spray/subscription [:selected]
+    (fn [selected]
+      (-> l/rectangle
+          (assoc :width 350 :height 30)
+          (l/tag tag)
+          (l/style {:stroke (if (= selected tag) :green :black)})))))
+
+(def box-1-loc [0 -100])
+(def box-2-loc [0 -200])
+
+(def text-out
+  (spray/sub-form <<
+    [(-> (text (<< :box-1-text))
+         (l/translate [5 5])
+         (l/translate box-1-loc))
+
+     (-> (text (<< :box-2-text))
+         (l/translate [5 5])
+         (l/translate box-2-loc))]))
+
+(def inputs
+  [(-> block
+       (assoc :colour :red :size 40)
+       (l/translate [0 0])
+       (l/tag :red-block))
+
+
+   (-> block
+       (assoc :colour :blue :size 40)
+       (l/translate [0 100])
+       (l/tag :blue-block))
+
+   (l/translate
+    (text-box :box-1)
+    box-1-loc)
+
+   (l/translate
+    (text-box :box-2)
+    box-2-loc)])
+
+(def io-tags
+  {:pressed?    [1250 700]
+   :point       [1250 650]
+   :click-count [1250 600]
+   :red-clicks  [1250 550]
+   :blue-clicks [1250 500]
+   :key-pressed [1250 450]
+
+   :box-1-text  [420 460]
+   :box-2-text  [420 360]
+
+   :mouse-up    [50 1000]
+   :mouse-down  [50 900]
+   :key-down    [50 200]
+   :key-up      [50 100]})
+
+(def internal-flow-tags
+  {:mouse-events [400 950]
+   :clicks       [700 800]
+   :clicked-on   [800 600]
+   :text-events  [700 400]
+   :key-events   [400 150]})
+
+(defn sub-tag-render [tags colour]
+  (map (fn [[k v]] (l/with-style {:fill colour}
+                     (l/translate (text k) v)))
+       tags))
+
+(def all-tags (merge io-tags internal-flow-tags))
+
+(defn tag-arrow [[from to of ot]]
+  (let [[x1 y1] (get all-tags from)
+        [x2 y2] (get all-tags to)
+        [x1o y1o] (or of [0 0])
+        [x2o y2o] (or ot [0 0])
+        p [(+ x1o x1 (* 12 (count (name from)))) (- (+ y1 y1o 6) y1o)]
+        q [(+ x2o (- x2 20)) (+ y2o y2 6)]]
+    (assoc arrow :from p :to q )))
+
+(def flow-chart
+  (map tag-arrow
+       [[:mouse-up :mouse-events [20 0]]
+        [:mouse-down :mouse-events [30 0]]
+        [:key-down :key-events [20 0]]
+        [:key-up :key-events [20 0]]
+        [:mouse-events :clicks [20 0]]
+        [:mouse-events :pressed? [20 0]]
+        [:clicks :clicked-on nil [70 12]]
+        [:clicks :click-count]
+        [:clicks :point]
+        [:clicked-on :red-clicks]
+        [:clicked-on :blue-clicks]
+        [:clicked-on :text-events nil [70 12]]
+        [:key-events :key-pressed]
+        [:key-events :text-events nil [70 -12]]
+        [:text-events :box-1-text [-150 0] [140 0]]
+        [:text-events :box-2-text [-150 0] [140 0]]]))
 
 (defn centre [{:keys [xmin xmax ymin ymax]}]
   [(/ (- xmax xmin) 2) (/ (- ymax ymin) 2)])
@@ -493,6 +607,29 @@
      [50 600])
     (view ::click-me)]))
 
+
+(def render
+  (spray/subscription [:mode]
+    (fn [mode]
+      [(l/translate [inputs text-out] [50 550])
+       (when (contains? #{:flow :io :all-tags} mode)
+         (sub-tag-render io-tags :teal))
+       (when (contains? #{:flow :all-tags} mode)
+         (sub-tag-render internal-flow-tags :rebeccapurple))
+       (when (contains? #{:flow} mode)
+         flow-chart)
+       (l/translate legend [1450 700])])))
+
+(defmethod view ::stream-ex [_]
+  [(l/translate [inputs text-out] [50 550])
+   (l/translate legend [1450 700])])
+
+(defmethod view ::stream-flow [_]
+  [(view ::stream-ex)
+   (sub-tag-render io-tags :teal)
+   (sub-tag-render internal-flow-tags :rebeccapurple)
+   flow-chart])
+
 (def root
   (spray/subscription [:mode] view))
 
@@ -507,7 +644,8 @@
    ::frp
    ::clickme-duplex-code
    ::clickme-stream-code
-   ::stream-issues])
+   ::stream-ex
+   ::stream-flow])
 
 (def game
   [::geo-game])
@@ -552,39 +690,6 @@
              (xf acc {:down start :up n})
              acc)))))))
 
-(defn drag-tx [xf]
-  (let [start (volatile! nil)]
-    (fn
-      ([] (xf))
-      ([acc] (xf acc))
-      ([acc n]
-       (if (:down? n)
-         (do
-           (vreset! start n)
-           acc)
-         (let [s @start]
-           (vreset! start nil)
-           (if (valid-click? {:down s :up n})
-             acc
-             (xf acc {:start (:location s)
-                      :end (:location n)
-                      :time (:time s)
-                      :duration [(:time s) (:time n)]}))))))))
-
-(defn drawings-tx [xf]
-  (let [mode (volatile! nil)]
-    (fn
-      ([] (xf))
-      ([acc] (xf acc))
-      ([acc n]
-       (if (:mode n)
-         (do
-           (vreset! mode (:mode n))
-           acc)
-         (if-let [m @mode]
-           acc
-           acc))))))
-
 (defn clicked-on?
   "Returns true if the shape with tag contains location."
   [tag location]
@@ -620,6 +725,39 @@
            (vswap! pressed disj (:key n))))
        (xf acc @pressed)))))
 
+(defn control-char? [c]
+  (contains? #{"Enter" "Shift" "OS" "Alt" "Control" "Backspace" "Tab"
+               "ArrowLeft" "ArrowRight" "ArrowUp" "ArrowDown"}
+             c))
+
+(defn which-click [{loc :location :as point}]
+  (cond
+    (clicked-on? :box-1 loc) (assoc point :selection :box-1)
+    (clicked-on? :box-2 loc) (assoc point :selection :box-2)
+    :else                    (assoc point :selection :none)))
+
+(defn keys-in [k]
+  (fn [xf]
+    (let [in-focus? (volatile! false)]
+      (fn
+        ([] (xf))
+        ([acc] (xf acc))
+        ([acc n]
+         (if-let [sel (:selection n)]
+           (do
+             (vreset! in-focus? (= sel k))
+             acc)
+           (if @in-focus?
+             (xf acc n)
+             acc)))))))
+
+(defn get-keystrokes-in [tag]
+  (comp keybr-tx
+        (keys-in tag)
+        (map :key)
+        (remove control-char?)
+        (take 30)))
+
 (defn last-rx
   ([] nil)
   ([a] a)
@@ -647,52 +785,72 @@
   (nth state-flow (or (transduce (comp keybr-tx arrow-counter)
                                  last-rx key-stream)
                       0)))
-(defn selection-at [click]
-  (let [loc (:location click)]
-    (cond
-      (clicked-on? ::circle-button loc) :circle
-      (clicked-on? ::rule-button loc)   :line
-      :else                             nil)))
 
 (spray/defsubs subscriptions <<
-  {:mouse-events  (:mouse-events (<< :db))
+  {:mouse-events    (:mouse-events (<< :db))
 
-   :key-events    (:key-events (<< :db))
+   :key-events      (:key-events (<< :db))
 
-   :clicks        (eduction (comp click-tx
-                                  (filter valid-click?)
-                                  (map unify-click))
-                            (reverse (<< :mouse-events)))
+   :clicks          (eduction (comp click-tx
+                                    (filter valid-click?)
+                                    (map unify-click))
+                              (reverse (<< :mouse-events)))
 
-   :last-click    (reduce last-rx (<< :clicks))
+   :last-click      (reduce last-rx (<< :clicks))
 
-   :drags         (eduction drag-tx (reverse (<< :mouse-event)))
+   :clickme-count   (count (filter (partial clicked-on? :click-me)
+                                   (map :location (<< :clicks))))
 
-   :clickme-count (count (filter (partial clicked-on? :click-me)
-                                 (map :location (<< :clicks))))
+   :last-mouse      (first (<< :mouse-events))
 
-   :last-mouse    (first (<< :mouse-events))
+   :clickme?        (and (:down? (<< :last-mouse))
+                         (clicked-on? :click-me (:location (<< :last-mouse))))
 
-   :clickme?      (and (:down? (<< :last-mouse))
-                       (clicked-on? :click-me (:location (<< :last-mouse))))
+   :m-stream-disp   (take 10 (<< :mouse-events))
 
-   :m-stream-disp (take 10 (<< :mouse-events))
+   :last-mouse-down (if (:down? (<< :last-mouse))
+                      (dissoc (<< :last-mouse) :down?))
 
-   :last-mouse-down
-   (if (:down? (<< :last-mouse))
-     (dissoc (<< :last-mouse) :down?))
+   :mode            (select-mode (<< :key-events))
 
-   :game-draw     (selection-at (<< :last-click))
+   :click-count     (count (<< :clicks))
 
-   :draw-modes    (map (fn [x] {:mode (selection-at x) :time (:time x)})
-                       (<< :clicks))
+   :red-clicks      (->> (<< :clicks)
+                         (map :location)
+                         (filter (partial clicked-on? :red-block))
+                         count)
 
-   :drawings      (eduction drawings-tx (sort-by :time (concat (<< :draw-modes)
-                                                               (<< :drags))))
+   :blue-clicks     (->> (<< :clicks)
+                         (map :location)
+                         (filter (partial clicked-on? :blue-block))
+                         count)
 
-   :points        (:points (<< :db))
+   ;; Things clicked on
+   :selections      (map which-click (<< :clicks))
 
-   :mode          (select-mode (<< :key-events))})
+   ;; Last thing clicked on (if any)
+   :selected        (:selection (last (<< :selections)))
+
+   :point           (:location (last (<< :clicks)))
+
+   ;; String representing the keys currently pressed down
+   :key-pressed     (->> (<< :key-events)
+                         (eduction keys-pressed)
+                         last
+                         (interpose "-")
+                         (apply str))
+
+   ;; interleaving of keyboard and selections streams
+   :text-events     (sort-by :time (concat (<< :key-events)
+                                           (<< :selections)))
+
+   ;; Text typed into input boxes
+   :box-1-text      (transduce (get-keystrokes-in :box-1) str (<< :text-events))
+   :box-2-text      (transduce (get-keystrokes-in :box-2) str (<< :text-events))
+
+   ;; Is the mouse button pressed right now?
+   :pressed?        (:down? (first (:mouse-events (<< :db))))})
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; Event Handlers
