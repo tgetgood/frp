@@ -6,7 +6,7 @@
 
   :min-lein-version "2.7.1"
 
-  :dependencies [#_[macroexpanse/ubik "0.4.0"]
+  :dependencies [[macroexpanse/ubik "0.4.1"]
                  [org.clojure/clojure "1.9.0"]
                  [org.clojure/clojurescript "1.9.946"]]
 
@@ -19,7 +19,7 @@
   :cljsbuild
   {:builds
    [{:id           "dev"
-     :source-paths ["src"  "../ubik/src"]
+     :source-paths ["src"]
 
      :figwheel     {:on-jsload "frp.core/on-reload"}
 
@@ -51,7 +51,7 @@
                           [org.clojure/test.check "0.9.0"]
                           [org.clojure/tools.namespace "0.2.11"]]
           ;; need to add dev source path here to get user.clj loaded
-          :source-paths  ["src" "dev"  "../ubik/src"]
+          :source-paths  ["src" "dev"]
 
           :repl-options  {:nrepl-middleware [cemerick.piggieback/wrap-cljs-repl]}
           ;; need to add the compliled assets to the :clean-targets
