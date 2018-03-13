@@ -5,7 +5,17 @@ programming, and particularly FRP.
 
 ### Usage
 
-FIXME
+To view the presentation run
+
+```sh
+lein figwheel
+```
+
+And when it's loaded point your browser to
+
+```
+localhost:3449/index.html
+```
 
 ## License
 
