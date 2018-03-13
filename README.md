@@ -5,6 +5,17 @@ programming, and particularly FRP.
 
 ### Usage
 
+Go to [the demo](https://tgetgood.github.io/frp/resources/public/index.html).
+
+Keep in mind that this is an experiment and lots of stuff is broken. For
+instance; the canvas doesn't resize with the browser window, so you have to
+refresh. And you can't refresh without clicking on the address bar because all
+keystrokes on the DOM are redirected...
+
+Have fun!
+
+### Development
+
 To view the presentation run
 
 ```sh
